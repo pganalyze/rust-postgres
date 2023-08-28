@@ -74,7 +74,7 @@ impl BinaryCopyInWriter {
         I: IntoIterator<Item = P>,
         I::IntoIter: ExactSizeIterator,
     {
-        let _ = self.as_mut().append_raw(values);
+        self.as_mut().append_raw(values)?;
 
         let mut this = self.project();
         if this.buf.len() > 4096 {
