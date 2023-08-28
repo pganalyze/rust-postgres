@@ -45,7 +45,7 @@ impl BinaryCopyInWriter {
         }
     }
 
-    /// Writes a single row.
+    /// Writes a single row to the network connection. To reduce latency, use `append` instead.
     ///
     /// # Panics
     ///
@@ -54,18 +54,48 @@ impl BinaryCopyInWriter {
         self.write_raw(slice_iter(values)).await
     }
 
+    /// Appends a single row to the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of values provided does not match the number expected.
+    pub fn append(self: Pin<&mut Self>, values: &[&(dyn ToSql + Sync)]) -> Result<(), Error> {
+        self.append_raw(slice_iter(values))
+    }
+
     /// A maximally-flexible version of `write`.
     ///
     /// # Panics
     ///
     /// Panics if the number of values provided does not match the number expected.
-    pub async fn write_raw<P, I>(self: Pin<&mut Self>, values: I) -> Result<(), Error>
+    pub async fn write_raw<P, I>(mut self: Pin<&mut Self>, values: I) -> Result<(), Error>
     where
         P: BorrowToSql,
         I: IntoIterator<Item = P>,
         I::IntoIter: ExactSizeIterator,
     {
+        let _ = self.as_mut().append_raw(values);
+
         let mut this = self.project();
+        if this.buf.len() > 4096 {
+            this.sink.send(this.buf.split().freeze()).await?;
+        }
+
+        Ok(())
+    }
+
+    /// A maximally-flexible version of `append`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of values provided does not match the number expected.
+    pub fn append_raw<P, I>(self: Pin<&mut Self>, values: I) -> Result<(), Error>
+    where
+        P: BorrowToSql,
+        I: IntoIterator<Item = P>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let this = self.project();
 
         let values = values.into_iter();
         assert!(
@@ -90,10 +120,6 @@ impl BinaryCopyInWriter {
                     .map_err(|e| Error::encode(io::Error::new(io::ErrorKind::InvalidInput, e)))?,
             };
             BigEndian::write_i32(&mut this.buf[idx..], len);
-        }
-
-        if this.buf.len() > 4096 {
-            this.sink.send(this.buf.split().freeze()).await?;
         }
 
         Ok(())
