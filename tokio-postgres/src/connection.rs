@@ -323,6 +323,17 @@ where
             },
         }
     }
+
+    fn shrink_buffer(&mut self) {
+        const MAX_SIZE: usize = 10 * 1024 * 1024; // 10MB
+        const INITIAL_SIZE: usize = 8 * 1024; // 8KB
+        if self.stream.read_buffer().capacity() > MAX_SIZE {
+            *self.stream.read_buffer_mut() = BytesMut::with_capacity(INITIAL_SIZE);
+        }
+        if self.stream.write_buffer().capacity() > MAX_SIZE {
+            *self.stream.write_buffer_mut() = BytesMut::with_capacity(INITIAL_SIZE);
+        }
+    }
 }
 
 impl<S, T> Future for Connection<S, T>
@@ -338,6 +349,7 @@ where
                 info!("{}: {}", notice.severity(), notice.message());
             }
         }
+        self.shrink_buffer();
         Poll::Ready(Ok(()))
     }
 }
